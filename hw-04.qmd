@@ -1,6 +1,6 @@
 ---
 title: "HW 04"
-author: "INSERT YOUR NAME HERE"
+author: "Ashton Norman"
 format:
   html:
     embed-resources: true
@@ -8,10 +8,19 @@ toc: true
 ---
 
 ```{r load-packages, message = FALSE}
-library(tidyverse)
+pacman::p_load(
+  tidyverse,
+  readr,
+  ggplot2,
+  tigris, 
+  sf,
+  maps,
+  readxl,
+  janitor,
+  stringr
+)
 # add any other packages you use here
 ```
-
 
 ## 1 - A second chance
 
@@ -20,21 +29,91 @@ library(tidyverse)
 
 ```
 
-
-## 2.  Arizona state of counties
+## 2. Arizona state of counties
 
 ```{r}
-#| label: label-me-2
+#| label: Load AZ counties
+
+options(tigris_use_cache = TRUE)
+
+AZ_counties <- counties("AZ", year=2021, progress_bar=FALSE)
+```
+
+```{r}
+#| label: Q2 AZ state of counties
+
+AZ_labels <- st_point_on_surface(AZ_counties) |>
+  mutate(
+    long=st_coordinates(geometry)[,1],
+    lat=st_coordinates(geometry)[,2],
+    long_shift=long-0.3,
+    lat_shift=lat+0.3
+    )
+
+#manual label adjustments for certain counties
+AZ_labels <- AZ_labels |>
+  mutate(
+    lat_shift=case_when(
+      NAME=="Apache" ~ lat-0.3,
+      NAME=="Graham" ~ lat-0.3,
+      NAME=="Santa Cruz" ~ lat-0.3,
+    TRUE ~ lat+0.3)
+    )
+    
+ggplot() +
+  geom_sf(data = AZ_counties, fill = "gray85", color = "black") +
+  geom_segment(data=AZ_labels, 
+               aes(x=long, y=lat, xend=long_shift, yend=lat_shift),
+               color="black", linewidth=0.2) +
+  geom_label(data=AZ_labels,
+             aes(x=long_shift, y=lat_shift, label=NAME),
+             fill="white", color="black", size=3.5, label.size=0.3) +
+  labs(x="Longitude", y="Latitude", caption="Source: Shapefile obtained using {tigris} R package, V2.0.1")+
+  theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "white", color = NA))
 
 ```
 
-## 3.  Arizona state of population change
+## 3. Arizona state of population change
 
 ```{r}
 #| label: label-me-3
 
+AZpop <- read_excel("data/co-est2023-pop-04.xlsx")
+
+
+AZpop <- AZpop |>
+  row_to_names(row_number=3) |>
+  clean_names() |>
+  drop_na() |>
+  rename(
+    NAME=na,
+    Est_base=na_2) |>
+  mutate(
+    NAME=gsub("\\.", "", NAME),
+    NAME=gsub(" County, Arizona", "", NAME),
+    pop_change=x2022-x2021) |>
+  filter(NAME != "Arizona")
+
+AZ_counties <- AZ_counties |>
+  left_join(AZpop, by="NAME")
+
+ggplot() +
+  geom_sf(data = AZ_counties, aes(fill = pop_change), color = "black") +
+  scale_fill_distiller(palette = "RdBu", na.value="gray80") +
+  labs(
+    x="Longitude", 
+    y="Latitude", 
+    fill="Population Change",
+    caption="Source: Shapefile obtained using {tigris} R package, V2.0.1\nPopulation change data from the US Census Bureau"
+    ) +
+  theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = "white", color = NA))
+
 ```
 
-## 4.  Arizona state of Indiginous Tribal Regions
+## 4. Arizona state of Indiginous Tribal Regions
 
 ## 5. Arizona state of patchwork
