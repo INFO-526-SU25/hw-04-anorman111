@@ -17,7 +17,8 @@ pacman::p_load(
   maps,
   readxl,
   janitor,
-  stringr
+  stringr,
+  patchwork
 )
 # add any other packages you use here
 ```
@@ -78,7 +79,7 @@ ggplot() +
 ## 3. Arizona state of population change
 
 ```{r}
-#| label: label-me-3
+#| label: Q3 AZ population change
 
 AZpop <- read_excel("data/co-est2023-pop-04.xlsx")
 
@@ -100,20 +101,166 @@ AZ_counties <- AZ_counties |>
   left_join(AZpop, by="NAME")
 
 ggplot() +
-  geom_sf(data = AZ_counties, aes(fill = pop_change), color = "black") +
-  scale_fill_distiller(palette = "RdBu", na.value="gray80") +
+  geom_sf(data=AZ_counties, aes(fill=pop_change), color="black") +
+  scale_fill_distiller(palette="RdBu", na.value="gray80") +
   labs(
     x="Longitude", 
     y="Latitude", 
     fill="Population Change",
+    title="Resident Population Change for Counties in AZ",
+    subtitle="July 01, 2021-July 01, 2022",
     caption="Source: Shapefile obtained using {tigris} R package, V2.0.1\nPopulation change data from the US Census Bureau"
     ) +
   theme_minimal() +
     theme(
-      panel.background = element_rect(fill = "white", color = NA))
+      panel.background=element_rect(fill="white", color = NA))
 
 ```
 
 ## 4. Arizona state of Indiginous Tribal Regions
 
+```{r}
+#| label: Q4 AZ Indigenous Tribal Regions
+
+AZ_reservation_shapes <- read_sf("data/American_Indian_Reservations_in_Arizona.shp")
+AZ_reservations <- st_transform(AZ_reservation_shapes, 4269)
+
+AZ_reservation_labels <- st_point_on_surface(AZ_reservations) |>
+  mutate(
+    long=st_coordinates(geometry)[,1],
+    lat=st_coordinates(geometry)[,2],
+    long_shift=long-0.7,
+    lat_shift=lat+0.4
+    ) |>
+  slice_max(order_by=ALAND, n=5)
+
+#manual label adjustments for certain counties
+AZ_reservation_labels <- AZ_reservation_labels |>
+  mutate(
+    lat_shift=case_when(
+      NAME=="Hopi Tribe" ~ lat-0.3,
+      NAME=="San Carlos Apache Tribe" ~ lat-0.2,
+    TRUE ~ lat+0.4)
+    )
+
+ggplot() +
+  geom_sf(data = AZ_counties, fill = "gray90", color = "white") +
+  geom_sf(data=AZ_reservations, fill="gray75", color="black", linewidth=1) +
+  geom_segment(data=AZ_reservation_labels, 
+               aes(x=long, y=lat, xend=long_shift, yend=lat_shift),
+               color="black", linewidth=0.2) +
+  geom_label(data=AZ_reservation_labels,
+             aes(x=long_shift, y=lat_shift, label=NAME),
+             fill="white", color="black", size=3.5, label.size=0.3) +
+  labs(
+    title="Indigenous Tribal Boundaries in AZ",
+    x="Longitude", y="Latitude", 
+    caption="Source: Shapefile obtained using {tigris} R package, v2.0.1\nIndigenous Tribe Shapefile obtained from AZGeo Data")+
+  theme_minimal() +
+    theme(
+      panel.background=element_rect(fill="white", color=NA))
+```
+
 ## 5. Arizona state of patchwork
+
+```{r}
+#| label: Q5 AZ Patchwork Counties and Reservations
+#| fig.width: 8
+#| fig.height: 5
+
+#Labels for larger map
+AZ_labels3 <-st_point_on_surface(AZ_counties) |>
+  mutate(
+    long=st_coordinates(geometry)[,1],
+    lat=st_coordinates(geometry)[,2],
+    long_shift=long-0.3,
+    lat_shift=lat+0.3
+    ) |>
+  slice_max(order_by = x2023, n = 3)
+
+#Some manual adjustments to the labels
+AZ_labels3 <- AZ_labels3 |>
+  mutate(
+    lat_shift=case_when(
+      NAME=="Pinal" ~ lat-0.3,
+      NAME=="Pima" ~ lat-0.2,
+    TRUE ~ lat+0.3),
+    long_shift=case_when(
+      NAME=="Pinal" ~ long+.1,
+    TRUE ~ long-0.3
+    ))
+
+#Zoomed portion
+AZ_zoom <- AZ_counties |>
+  slice_max(order_by=x2023, n=3)
+
+#Zoomed in reservation labels - couldn't figure out, tried based on intersection with Maricopa, Maricopa + Pima and Pinal, etc, but couldn't get White Mountain Apache. 
+AZ_reservation_labels_zoom <- AZ_reservations |>
+  filter(NAME %in% c(
+    "Tohono O’odham Nation",
+    "San Carlos Apache Tribe",
+    "White Mountain Apache Tribe"
+  )) |>
+  st_point_on_surface() |>
+  mutate(
+    long=st_coordinates(geometry)[, 1],
+    lat=st_coordinates(geometry)[, 2],
+    long_shift=long - 0.7,
+    lat_shift=lat - 0.3
+  )
+
+#Full state view plot
+state_plot <- ggplot() +
+  geom_sf(data=AZ_counties, aes(fill=pop_change), color="black") +
+  scale_fill_distiller(palette="RdBu", na.value="gray80") +
+  geom_segment(data=AZ_labels3, 
+               aes(x=long, y=lat, xend=long_shift, yend=lat_shift),
+               color="black", linewidth=0.2) +
+  geom_label(data=AZ_labels3,
+             aes(x=long_shift, y=lat_shift, label=NAME),
+             fill="white", color="black", size=3.5, label.size=0.3) +
+    theme_void() +
+  theme(legend.position="none")
+
+
+#Zoomed in plot
+zoom_reservation_plot <- ggplot() +
+  geom_sf(data=AZ_zoom, aes(fill=pop_change), color="black") +
+  geom_sf(data=AZ_reservation_zoom, fill=NA, color="black", linewidth=1) +
+  scale_fill_distiller(
+    palette="RdBu",
+    breaks=c(25000, 50000)) + 
+  coord_sf(xlim=c(-114, -107), ylim=c(31.5, 36.5)) +
+  geom_segment(data=AZ_reservation_labels_zoom, 
+               aes(x=long, y=lat, xend=long_shift, yend=lat_shift),
+               color="black", linewidth=0.2) +
+  geom_label(data=AZ_reservation_labels_zoom,
+             aes(x=long_shift, y=lat_shift, label=NAME),
+             fill="white", color="black", size=3.5, label.size=0.3) +
+  labs(
+    x="Longitude", 
+    y="Latitude", 
+    fill="Population Change",
+    title="Resident Population Change for Counties in AZ",
+    subtitle="July 01, 2021-July 01, 2022",
+    caption="Source: Shapefile obtained using {tigris} R package, V2.0.1\nPopulation change data from the US Census Bureau\nIndigenous Tribe Shapefile obtained from AZGeo Data"
+    ) +
+  theme_minimal() +
+    theme(
+      panel.background=element_rect(fill="white", color=NA),
+      legend.position=c(0.05, .8), 
+      legend.justification="left",
+      legend.background=element_rect(fill="white"),
+    legend.box.background = element_blank()
+      ) +
+  guides(fill=guide_colorbar(
+    direction="horizontal",
+    title="Population Change", 
+    title.position="top", 
+    title.hjust=0))
+      
+zoom_reservation_plot +
+  inset_element(state_plot, left = 0.4, bottom = .45, right = .99, top = .99)
+
+
+```
